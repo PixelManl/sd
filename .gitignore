@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Local datasets and generated artifacts must never be committed.
+data/
+defect_images/
+defect_xml/
+healthy_images/
+train_data_closeup/
+train_data_mid/
+templates/
+uploads/
+huggingface/
+missing_nut_bolt.png
