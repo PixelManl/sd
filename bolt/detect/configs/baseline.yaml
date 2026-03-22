@@ -1,0 +1,51 @@
+# Detection baseline contract for the bolt-missing mainline.
+# This file is intentionally framework-light and uses placeholder local paths.
+
+project:
+  name: bolt-missing-detection-baseline
+  task: detection
+  class_names:
+    - missing_fastener
+
+paths:
+  images_dir: data/bolt/detect/images
+  annotations: data/bolt/detect/annotations/instances.json
+  prepared_root: data/bolt/detect/prepared/baseline
+  run_root: bolt/detect/runs/baseline
+  predict_root: bolt/detect/runs/infer
+
+dataset:
+  annotation_format: coco_json
+  split_seed: 42
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  copy_mode: manifest_only
+
+model:
+  backend: ultralytics
+  model_name: yolo11n.pt
+  device: auto
+  image_size: 1024
+  num_classes: 1
+
+train:
+  epochs: 100
+  batch_size: 8
+  workers: 4
+  patience: 20
+  pretrained: true
+  dry_run_default: true
+
+eval:
+  split: val
+  conf_threshold: 0.25
+  iou_threshold: 0.5
+  max_det: 100
+
+infer:
+  source: data/bolt/detect/images
+  conf_threshold: 0.25
+  save_txt: false
+  save_conf: false
+  save_crop: false

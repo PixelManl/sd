@@ -1,9 +1,153 @@
 # Detect Stage
 
-这一层负责缺陷识别训练、验证和评测。
+Detection is the final delivery mainline for the bolt-missing task.
+This directory holds the baseline contract for a box-supervised detector,
+not a fully wired training stack yet.
 
-建议本地私有目录：
+The current repository state is intentionally conservative:
 
-- `runs/`：训练输出、日志、checkpoint
+- Official supervision is rectangle boxes.
+- The repo does not ship a detection framework dependency yet.
+- This pass defines the baseline path, file contracts, and CLIs.
+- Runtime outputs such as `bolt/detect/runs/` remain local-only artifacts.
 
-这些目录默认不入 Git。
+## Baseline Goal
+
+The immediate goal is to make detection work legible and repeatable before
+locking into a framework. The recommended first baseline is a single-class
+detector for `missing_fastener`.
+
+The path is:
+
+1. Normalize existing box annotations into a detection-friendly dataset view.
+2. Inspect box quality and scale distribution before training.
+3. Train a minimal single-class baseline.
+4. Evaluate false positives and false negatives on a held-out split.
+5. Run inference on images or folders for quick error review.
+
+For now, the scripts in `bolt/detect/scripts/` focus on:
+
+- argparse-based entrypoints
+- path validation
+- config and dataset contract documentation
+- structured dry-run output
+- TODO anchors for later framework integration
+
+## Suggested Data Contract
+
+Because the repo still lacks a committed detection framework, the cleanest
+intermediate contract is a COCO-style JSON with rectangle boxes plus an image
+root on local disk.
+
+Recommended local-only inputs:
+
+- image root: `data/bolt/detect/images/`
+- box annotation file: `data/bolt/detect/annotations/instances.json`
+- prepared detection root: `data/bolt/detect/prepared/baseline/`
+
+Expected class set for the first pass:
+
+- `missing_fastener`
+
+The current skeleton scripts are conservative:
+
+- `prepare_detection_dataset.py` validates paths and emits a split/materialize
+  plan.
+- `report_bbox_stats.py` reads COCO-like box JSON and reports box-scale stats.
+- `train_baseline.py` resolves config/paths and prints a training plan.
+- `eval_baseline.py` resolves config/paths and prints an evaluation plan.
+- `infer_baseline.py` resolves config/paths and prints an inference plan.
+
+If `ultralytics` is available locally, later revisions can wire the train/eval/
+infer commands to a YOLO baseline. This skeleton intentionally does not hard
+require that dependency.
+
+## Config Template
+
+Start from:
+
+- `bolt/detect/configs/baseline.yaml`
+
+The config is a baseline contract only. It documents expected paths and key
+options such as:
+
+- dataset roots and annotation files
+- class names
+- split ratios
+- model/backend placeholders
+- training, evaluation, and inference knobs
+
+The scripts accept explicit CLI overrides so the baseline remains usable even if
+`PyYAML` is not installed.
+
+## Example Commands
+
+Prepare dataset skeleton:
+
+```powershell
+python -m uv run python bolt/detect/scripts/prepare_detection_dataset.py `
+  --images-dir data/bolt/detect/images `
+  --annotations data/bolt/detect/annotations/instances.json `
+  --output-dir data/bolt/detect/prepared/baseline `
+  --dry-run
+```
+
+Report box stats:
+
+```powershell
+python -m uv run python bolt/detect/scripts/report_bbox_stats.py `
+  --annotations data/bolt/detect/annotations/instances.json
+```
+
+Plan baseline training:
+
+```powershell
+python -m uv run python bolt/detect/scripts/train_baseline.py `
+  --config bolt/detect/configs/baseline.yaml `
+  --dataset-root data/bolt/detect/prepared/baseline `
+  --dry-run
+```
+
+Plan baseline evaluation:
+
+```powershell
+python -m uv run python bolt/detect/scripts/eval_baseline.py `
+  --config bolt/detect/configs/baseline.yaml `
+  --dataset-root data/bolt/detect/prepared/baseline `
+  --split val `
+  --dry-run
+```
+
+Plan baseline inference:
+
+```powershell
+python -m uv run python bolt/detect/scripts/infer_baseline.py `
+  --config bolt/detect/configs/baseline.yaml `
+  --input data/bolt/detect/images `
+  --dry-run
+```
+
+## What Is Deliberately Missing
+
+This baseline skeleton does not yet commit to:
+
+- an actual training backend
+- dataset conversion into a specific detector format
+- checkpoint management
+- metric persistence format
+- visualization assets
+
+Those pieces should be added only after:
+
+1. the box dataset contract is stable
+2. box scale and quality look reasonable
+3. the team decides on the first framework dependency
+
+## Local Output Conventions
+
+Suggested local-only output roots:
+
+- `bolt/detect/runs/baseline/` for training/evaluation outputs
+- `bolt/detect/runs/infer/` for prediction previews
+
+Do not commit those outputs.
