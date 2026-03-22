@@ -3,7 +3,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from project_boot import build_demo_config
+from demo.project_boot import build_demo_config
 
 
 class BuildDemoConfigTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class BuildDemoConfigTests(unittest.TestCase):
 
     def test_generate_defect_supports_dry_run_without_model_loading(self):
         result = subprocess.run(
-            [sys.executable, "generate_defect.py", "--dry-run"],
+            [sys.executable, "demo/generate_defect.py", "--dry-run"],
             cwd=self.repo_root,
             capture_output=True,
             text=True,

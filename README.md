@@ -1,11 +1,15 @@
-# SD Defect Demo
+# SD Defect Project
 
-一个面向缺陷数据增强的扩散模型原型仓库。当前先以“建筑裂缝 demo”作为最小启动入口，并保留“缺失紧固件”方向的脚本雏形。
+一个面向缺陷数据增强与缺陷数据资产化的原型仓库。当前仓库已经拆成两条线：
+
+- `bolt/`：挂点金具螺栓缺失主线
+- `demo/`：裂缝 smoke demo，只负责最小可运行验证
 
 ## 当前状态
 
 - 已完成 `uv` 环境管理接入。
-- 已完成最小启动入口整理：`generate_defect.py`。
+- 已完成 demo 最小启动入口整理：`demo/generate_defect.py`。
+- 已完成主线目录收口：`bolt/`。
 - 已支持 `--dry-run`，可在不加载模型的情况下验证路径、配置和默认模型源。
 - 已补最小测试，验证启动配置解析和 dry-run 行为。
 - 真实推理路径仍依赖本机模型下载、网络和 GPU/CPU 环境，当前仓库里还没有把所有旧脚本统一到同一套工程规范。
@@ -19,28 +23,53 @@
 3. 用 ControlNet / Inpainting 在局部区域生成缺陷纹理。
 4. 输出增强图、调试图和后续可转成标注的数据。
 
-当前优先支持的是“裂缝 demo 启动”，不是全量流水线的一次性工程化。
+当前优先支持的是“螺栓缺失主线资产化”，裂缝 demo 仅作为最小启动与环境烟测。
 
 ## 仓库结构
 
 ```text
 sd/
+├─ bolt/                      # 螺栓缺失主线
+│  ├─ dataset/
+│  ├─ mask/
+│  ├─ generate/
+│  ├─ detect/
+│  ├─ package/
+│  ├─ docs/
+│  └─ scripts/
+├─ demo/                      # demo / smoke 路径
+│  ├─ generate_defect.py
+│  ├─ project_boot.py
+│  ├─ batch_augment.py
+│  └─ work_stream.py
 ├─ data/                      # 本地运行时目录；默认不纳入 Git
-├─ scripts/                   # 缺失紧固件方向脚本与训练脚本
 ├─ tests/
-│  └─ test_project_boot.py    # 最小启动测试
-├─ generate_defect.py         # 当前推荐启动入口
-├─ project_boot.py            # 启动配置解析
+│  └─ test_demo_boot.py       # demo 最小启动测试
 ├─ pyproject.toml             # uv 项目配置
 └─ uv.lock                    # uv 锁文件
 ```
 
 ## 推荐入口
 
+### 主线入口
+
+主线工作统一在 `bolt/` 下推进：
+
+- `bolt/dataset/`
+- `bolt/mask/`
+- `bolt/generate/`
+- `bolt/detect/`
+- `bolt/package/`
+- `bolt/scripts/`
+
+当前主线建议优先做：SAM2 像素级 mask 资产化。
+
+### Demo 入口
+
 当前推荐只使用下面这条路径启动项目：
 
 ```powershell
-python -m uv run python generate_defect.py --dry-run
+python -m uv run python demo/generate_defect.py --dry-run
 ```
 
 这条命令会验证：
@@ -54,7 +83,8 @@ python -m uv run python generate_defect.py --dry-run
 
 - 仓库只提交代码、配置和文档，不提交任何真实数据集、标注文件、生成结果或中间产物。
 - `data/`、`defect_images/`、`defect_xml/`、`healthy_images/`、`train_data_*`、`templates/`、`uploads/` 默认都被 `.gitignore` 排除。
-- `generate_defect.py` 首次运行时会在本地自动创建最小 demo 输入，不依赖仓库内置图片。
+- `bolt/dataset/raw/`、`bolt/dataset/annotations/`、`bolt/mask/assets/`、`bolt/mask/overlays/`、`bolt/mask/metadata/`、`bolt/generate/outputs/`、`bolt/detect/runs/`、`bolt/package/build/` 也默认不入 Git。
+- `demo/generate_defect.py` 首次运行时会在本地自动创建最小 demo 输入，不依赖仓库内置图片。
 
 ## 环境准备
 
@@ -84,7 +114,7 @@ python -m uv sync
 ### A. 先做 dry-run
 
 ```powershell
-python -m uv run python generate_defect.py --dry-run
+python -m uv run python demo/generate_defect.py --dry-run
 ```
 
 预期输出是一段 JSON，包含：
@@ -100,7 +130,7 @@ python -m uv run python generate_defect.py --dry-run
 ### B. 再尝试真实生成
 
 ```powershell
-python -m uv run python generate_defect.py
+python -m uv run python demo/generate_defect.py
 ```
 
 默认会使用：
@@ -117,13 +147,13 @@ python -m uv run python generate_defect.py
 ```powershell
 $env:SD_BASE_MODEL="your/inpaint/model"
 $env:SD_CONTROLNET_MODEL="your/controlnet/model"
-python -m uv run python generate_defect.py --dry-run
+python -m uv run python demo/generate_defect.py --dry-run
 ```
 
 也可以直接通过命令行传参：
 
 ```powershell
-python -m uv run python generate_defect.py `
+python -m uv run python demo/generate_defect.py `
   --base-model your/inpaint/model `
   --controlnet-model your/controlnet/model `
   --dry-run
@@ -155,20 +185,20 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 - 默认启动配置是否使用仓库相对路径
 - CLI 和环境变量覆盖是否生效
-- `generate_defect.py --dry-run` 是否可以在不加载模型时启动成功
+- `demo/generate_defect.py --dry-run` 是否可以在不加载模型时启动成功
 
 ## 当前限制
 
 这几个点要明确：
 
 - 目前“可用”指的是 `uv + dry-run + 最小入口` 已经整理完成。
-- `generate_defect.py` 的真实生成链路已经接好，但是否在你的机器上稳定跑完，还取决于模型下载、网络、显卡和驱动环境。
-- 历史脚本如 `batch_augment.py`、`work_stream.py` 仍保留较多旧路径和实验性写法，还没有统一重构。
-- `scripts/` 目录下的“缺失紧固件”流程是下一阶段工程化对象，目前不建议直接当作开箱即用流程。
+- `demo/generate_defect.py` 的真实生成链路已经接好，但是否在你的机器上稳定跑完，还取决于模型下载、网络、显卡和驱动环境。
+- `demo/batch_augment.py`、`demo/work_stream.py` 仍保留较多旧路径和实验性写法。
+- `bolt/scripts/` 已经是主线脚本区，但当前仍处在“数据资产优先、生成链路次之”的阶段。
 
 ## 主要脚本说明
 
-### `generate_defect.py`
+### `demo/generate_defect.py`
 
 当前唯一推荐启动入口。
 
@@ -178,7 +208,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 - 支持 dry-run 配置检查
 - 在真实运行时加载 Inpainting + ControlNet 做局部生成
 
-### `project_boot.py`
+### `demo/project_boot.py`
 
 负责解析启动配置：
 
@@ -187,15 +217,15 @@ python -m unittest discover -s tests -p "test_*.py" -v
 - 默认模型
 - 环境变量覆盖
 
-### `batch_augment.py`
+### `demo/batch_augment.py`
 
 历史裂缝批量增强脚本。保留参考价值，但还没有完成当前阶段的路径治理。
 
-### `work_stream.py`
+### `demo/work_stream.py`
 
 更早期的实验脚本，包含背景生成、随机掩码、缺陷注入和 YOLO 标注导出等逻辑。目前仍属于实验性实现。
 
-### `scripts/`
+### `bolt/scripts/`
 
 主要是“缺失紧固件”方向的脚本，包括：
 
@@ -212,10 +242,10 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 当前最合理的推进顺序是：
 
-1. 在本机完整跑通一次 `generate_defect.py` 真实生成。
-2. 给真实推理补日志和下载/缓存提示。
-3. 再逐步清理 `batch_augment.py` 和 `work_stream.py` 的硬编码路径。
-4. 最后再收敛 `scripts/` 里的缺失紧固件流程。
+1. 在 `bolt/mask/` 下接入 SAM2，批量生成像素级 mask 资产。
+2. 为 mask 资产补 metadata、overlay 和质检记录。
+3. 收集健康图后，再推进 `bolt/generate/` 的缺陷注入与生成链路。
+4. 最后根据比赛要求收口到 `bolt/package/`。
 
 ## 维护说明
 
@@ -223,8 +253,8 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 ```powershell
 python -m uv sync
-python -m uv run python generate_defect.py --dry-run
+python -m uv run python demo/generate_defect.py --dry-run
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-如果这三步都通过，就说明当前仓库的最小入口和 `uv` 管理已经正常。
+如果这三步都通过，就说明当前 demo smoke 路径和 `uv` 管理仍然正常。

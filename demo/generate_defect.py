@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from project_boot import DemoConfig, build_demo_config
+try:
+    from demo.project_boot import DemoConfig, build_demo_config
+except ModuleNotFoundError:
+    from project_boot import DemoConfig, build_demo_config
 
 
 def extract_canny_feature(image):
@@ -101,7 +104,7 @@ def run_generation(config: DemoConfig) -> Path:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    config = build_demo_config(argv, repo_root=Path(__file__).resolve().parent)
+    config = build_demo_config(argv, repo_root=Path(__file__).resolve().parents[1])
     ensure_demo_assets(config)
 
     if config.dry_run:

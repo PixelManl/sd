@@ -14,3 +14,19 @@ templates/
 uploads/
 huggingface/
 missing_nut_bolt.png
+
+# Private local docs and derived markdown.
+docs/规范/
+docs/规范_md/
+
+# Bolt mainline local-only assets.
+bolt/dataset/raw/
+bolt/dataset/annotations/
+bolt/dataset/derived/
+bolt/mask/assets/
+bolt/mask/overlays/
+bolt/mask/metadata/
+bolt/generate/outputs/
+bolt/generate/cache/
+bolt/detect/runs/
+bolt/package/build/
