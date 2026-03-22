@@ -12,4 +12,10 @@
 - `docs/`
 - `scripts/`
 
-当前优先级是 `mask/` 阶段，也就是 SAM2 像素级 mask 资产化。
+当前执行原则：
+
+- `detect/` 是最终交付主线
+- `dataset/` 负责缺陷数据治理和健康图种子集
+- `mask/` 负责 SAM2 像素级资产 pilot
+
+详细关系参见 `bolt/docs/mainline_architecture.md`。

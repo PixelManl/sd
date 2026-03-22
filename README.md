@@ -23,7 +23,13 @@
 3. 用 ControlNet / Inpainting 在局部区域生成缺陷纹理。
 4. 输出增强图、调试图和后续可转成标注的数据。
 
-当前优先支持的是“螺栓缺失主线资产化”，裂缝 demo 仅作为最小启动与环境烟测。
+当前优先支持的是“螺栓缺失三线架构”：
+
+- 检测是最终交付主线
+- 健康数据是负样本与生成母图支撑线
+- SAM2 是像素级资产支撑线
+
+裂缝 demo 仅作为最小启动与环境烟测。
 
 ## 仓库结构
 
@@ -62,7 +68,13 @@ sd/
 - `bolt/package/`
 - `bolt/scripts/`
 
-当前主线建议优先做：SAM2 像素级 mask 资产化。
+当前主线建议按以下关系推进：
+
+- `bolt/detect/`：最终交付主线
+- `bolt/dataset/`：缺陷数据治理与健康图种子集
+- `bolt/mask/`：SAM2 资产 pilot
+
+详细说明参见 `bolt/docs/mainline_architecture.md`。
 
 ### Demo 入口
 
@@ -242,10 +254,11 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 当前最合理的推进顺序是：
 
-1. 在 `bolt/mask/` 下接入 SAM2，批量生成像素级 mask 资产。
-2. 为 mask 资产补 metadata、overlay 和质检记录。
-3. 收集健康图后，再推进 `bolt/generate/` 的缺陷注入与生成链路。
-4. 最后根据比赛要求收口到 `bolt/package/`。
+1. 在 `bolt/dataset/` 下把缺陷图和框标注整理成检测可用数据集。
+2. 在 `bolt/detect/` 下先跑一个轻量单类 detector baseline。
+3. 同步收集小规模高匹配健康图种子集，用于负样本与后续生成母图。
+4. 在 `bolt/mask/` 下做 SAM2 小批量 pilot，沉淀 `core_mask`、`edit_mask`、overlay 和 QA 记录。
+5. 再决定何时把健康图和 SAM2 资产接入 `bolt/generate/`。
 
 ## 维护说明
 
