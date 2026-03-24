@@ -34,6 +34,8 @@ class PrepareDetectionDatasetTests(unittest.TestCase):
             output_dir=output_dir,
             config=self.config_path,
             class_name="missing_fastener",
+            metadata=None,
+            group_field="capture_group_id",
             train_ratio=0.5,
             val_ratio=0.5,
             test_ratio=0.0,
@@ -88,6 +90,36 @@ class PrepareDetectionDatasetTests(unittest.TestCase):
         )
         return images_dir, annotations_dir
 
+    def create_metadata_json(self, path: Path, records: list[dict[str, str]]) -> Path:
+        write_text(path, json.dumps(records, ensure_ascii=False, indent=2))
+        return path
+
+    def create_coco_fixture(self, root: Path) -> tuple[Path, Path]:
+        images_dir = root / "images"
+        annotations_path = root / "annotations" / "instances.json"
+        image_a = images_dir / "scene_a" / "sample_a.jpg"
+        image_b = images_dir / "scene_b" / "sample_b.jpg"
+        image_a.parent.mkdir(parents=True, exist_ok=True)
+        image_b.parent.mkdir(parents=True, exist_ok=True)
+        image_a.write_bytes(b"fake-image-a")
+        image_b.write_bytes(b"fake-image-b")
+
+        payload = {
+            "images": [
+                {"id": 1, "file_name": "scene_a/sample_a.jpg", "width": 4000, "height": 3000},
+                {"id": 2, "file_name": "scene_b/sample_b.jpg", "width": 4000, "height": 3000},
+            ],
+            "annotations": [
+                {"id": 11, "image_id": 1, "category_id": 1, "bbox": [100, 200, 200, 300]},
+                {"id": 12, "image_id": 2, "category_id": 1, "bbox": [1200, 1000, 300, 600]},
+            ],
+            "categories": [
+                {"id": 1, "name": "bolt_missing"},
+            ],
+        }
+        write_text(annotations_path, json.dumps(payload, ensure_ascii=False, indent=2))
+        return images_dir, annotations_path
+
     def test_build_plan_supports_pascal_voc_annotation_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -136,6 +168,82 @@ class PrepareDetectionDatasetTests(unittest.TestCase):
 
             first_label = exported_labels[0].read_text(encoding="utf-8").strip()
             self.assertTrue(first_label.startswith("0 "))
+
+    def test_group_split_keeps_same_capture_group_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            images_dir, annotations_dir = self.create_voc_fixture(tmp_path)
+            metadata_path = self.create_metadata_json(
+                tmp_path / "metadata.json",
+                [
+                    {
+                        "sample_id": "sample_a",
+                        "scene_id": "scene-1",
+                        "capture_group_id": "cap-1",
+                    },
+                    {
+                        "sample_id": "sample_b",
+                        "scene_id": "scene-2",
+                        "capture_group_id": "cap-1",
+                    },
+                ],
+            )
+            output_dir = tmp_path / "prepared"
+            args = self.build_args(
+                images_dir,
+                annotations_dir,
+                output_dir,
+                metadata=metadata_path,
+                train_ratio=0.5,
+                val_ratio=0.5,
+                test_ratio=0.0,
+                copy_mode="manifest_only",
+                dry_run=False,
+            )
+
+            self.module.validate_args(args)
+            config = self.module.maybe_load_yaml(args.config)
+            plan = self.module.build_plan(args, config)
+            self.module.materialize_dataset(plan, args)
+
+            train_rows = json.loads((output_dir / "manifests" / "train.json").read_text(encoding="utf-8"))
+            val_rows = json.loads((output_dir / "manifests" / "val.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(len(train_rows), 2)
+            self.assertEqual(len(val_rows), 0)
+            self.assertEqual({row["group_key"] for row in train_rows}, {"cap-1"})
+
+    def test_materialize_copy_mode_exports_yolo_labels_from_coco_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            images_dir, annotations_path = self.create_coco_fixture(tmp_path)
+            output_dir = tmp_path / "prepared"
+            args = self.build_args(
+                images_dir,
+                annotations_path,
+                output_dir,
+                copy_mode="copy",
+                dry_run=False,
+            )
+
+            self.module.validate_args(args)
+            config = self.module.maybe_load_yaml(args.config)
+            plan = self.module.build_plan(args, config)
+            self.module.materialize_dataset(plan, args)
+
+            manifest = json.loads((output_dir / "dataset_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["annotation_summary"]["format"], "coco_json")
+
+            exported_images = sorted((output_dir / "images" / "train").glob("*.jpg")) + sorted(
+                (output_dir / "images" / "val").glob("*.jpg")
+            )
+            exported_labels = sorted((output_dir / "labels" / "train").glob("*.txt")) + sorted(
+                (output_dir / "labels" / "val").glob("*.txt")
+            )
+
+            self.assertEqual(len(exported_images), 2)
+            self.assertEqual(len(exported_labels), 2)
+            self.assertIn("missing_fastener", (output_dir / "dataset.yaml").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
 import json
 import random
 import shutil
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +40,17 @@ def parse_args() -> argparse.Namespace:
         default="missing_fastener",
         help="Single-class baseline label.",
     )
+    parser.add_argument(
+        "--metadata",
+        type=Path,
+        help="Optional sample metadata file (.json, .jsonl, .csv) for group-aware splitting.",
+    )
+    parser.add_argument(
+        "--group-field",
+        choices=("capture_group_id", "scene_id", "sample_id", "none"),
+        default="capture_group_id",
+        help="Preferred grouping key for split isolation. Falls back to sample_id when missing.",
+    )
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--test-ratio", type=float, default=0.1)
@@ -69,6 +82,8 @@ def validate_args(args: argparse.Namespace) -> None:
             f"Split ratios must sum to 1.0, got {split_sum:.6f} "
             f"from train={args.train_ratio}, val={args.val_ratio}, test={args.test_ratio}."
         )
+    if args.metadata and not args.metadata.exists():
+        raise FileNotFoundError(f"Metadata path not found: {args.metadata}")
     if args.config and not args.config.exists():
         raise FileNotFoundError(f"Config file not found: {args.config}")
 
@@ -91,6 +106,59 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected a JSON object at: {path}")
     return payload
+
+
+def load_metadata_records(path: Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        return []
+
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            return [dict(row) for row in csv.DictReader(handle)]
+    if suffix == ".jsonl":
+        records: list[dict[str, Any]] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for lineno, line in enumerate(handle, start=1):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                payload = json.loads(stripped)
+                if not isinstance(payload, dict):
+                    raise ValueError(f"Expected JSON object in {path} line {lineno}")
+                records.append(payload)
+        return records
+    if suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            return [record for record in payload if isinstance(record, dict)]
+        if isinstance(payload, dict):
+            records = payload.get("records")
+            if isinstance(records, list):
+                return [record for record in records if isinstance(record, dict)]
+        raise ValueError(f"Unsupported metadata JSON structure: {path}")
+    raise ValueError(f"Unsupported metadata format: {path.suffix}")
+
+
+def build_metadata_index(records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for record in records:
+        for key in ("sample_id", "file_name", "image_name", "image_path"):
+            value = record.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            normalized = value.strip()
+            index[normalized] = record
+            index[Path(normalized).name] = record
+            index[Path(normalized).stem] = record
+    return index
+
+
+def match_metadata(sample_id: str, file_name: str, metadata_index: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    for key in (sample_id, file_name, Path(file_name).stem):
+        if key in metadata_index:
+            return metadata_index[key]
+    return {}
 
 
 def summarize_coco_annotations(payload: dict[str, Any]) -> dict[str, Any]:
@@ -133,7 +201,10 @@ def index_images(images_dir: Path) -> dict[str, Path]:
 
 
 def parse_pascal_voc_directory(
-    images_dir: Path, annotations_dir: Path, class_name: str
+    images_dir: Path,
+    annotations_dir: Path,
+    class_name: str,
+    metadata_index: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     image_index = index_images(images_dir)
     samples: list[dict[str, Any]] = []
@@ -186,6 +257,7 @@ def parse_pascal_voc_directory(
                 "width": width,
                 "height": height,
                 "boxes": boxes,
+                "metadata": match_metadata(xml_path.stem, image_path.name, metadata_index),
             }
         )
 
@@ -203,66 +275,176 @@ def parse_pascal_voc_directory(
     }
 
 
-def load_annotation_source(
-    annotations_path: Path, images_dir: Path, class_name: str
-) -> dict[str, Any]:
-    if annotations_path.is_dir():
-        return parse_pascal_voc_directory(images_dir, annotations_path, class_name)
+def coerce_coco_box(raw_bbox: Any) -> list[int] | None:
+    if not isinstance(raw_bbox, list) or len(raw_bbox) != 4:
+        return None
+    x, y, width, height = raw_bbox
+    try:
+        xmin = int(float(x))
+        ymin = int(float(y))
+        box_width = int(float(width))
+        box_height = int(float(height))
+    except (TypeError, ValueError):
+        return None
+    xmax = xmin + box_width
+    ymax = ymin + box_height
+    if box_width <= 0 or box_height <= 0:
+        return None
+    return [xmin, ymin, xmax, ymax]
 
-    payload = load_json(annotations_path)
+
+def parse_coco_annotations(
+    images_dir: Path,
+    payload: dict[str, Any],
+    class_name: str,
+    metadata_index: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    images = payload.get("images")
+    annotations = payload.get("annotations")
+    categories = payload.get("categories")
+    if not isinstance(images, list) or not isinstance(annotations, list):
+        raise ValueError("COCO annotations must contain 'images' and 'annotations' lists.")
+
+    image_index = index_images(images_dir)
+    category_name_by_id: dict[Any, str] = {}
+    if isinstance(categories, list):
+        for category in categories:
+            if isinstance(category, dict):
+                category_name_by_id[category.get("id")] = str(category.get("name", ""))
+
+    annotations_by_image_id: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+    source_labels: set[str] = set()
+    for annotation in annotations:
+        if not isinstance(annotation, dict):
+            continue
+        image_id = annotation.get("image_id")
+        bbox = coerce_coco_box(annotation.get("bbox"))
+        if image_id is None or bbox is None:
+            continue
+        category_name = category_name_by_id.get(annotation.get("category_id"), "")
+        if category_name:
+            source_labels.add(category_name)
+        annotations_by_image_id[image_id].append(
+            {
+                "class_id": 0,
+                "class_name": class_name,
+                "original_label": category_name,
+                "bbox": bbox,
+            }
+        )
+
+    samples: list[dict[str, Any]] = []
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        file_name = str(image.get("file_name", "")).strip()
+        image_id = image.get("id", file_name)
+        image_path = image_index.get(file_name) or image_index.get(Path(file_name).name) or image_index.get(Path(file_name).stem)
+        if image_path is None:
+            raise FileNotFoundError(f"Could not resolve image for COCO image entry {file_name!r}.")
+        width = int(image.get("width", 0))
+        height = int(image.get("height", 0))
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Invalid image size in COCO image entry: {file_name!r}")
+        sample_id = Path(file_name).stem or str(image_id)
+        samples.append(
+            {
+                "sample_id": sample_id,
+                "image_id": image_id,
+                "image_path": str(image_path.resolve()),
+                "file_name": image_path.name,
+                "width": width,
+                "height": height,
+                "boxes": annotations_by_image_id.get(image_id, []),
+                "metadata": match_metadata(sample_id, image_path.name, metadata_index),
+            }
+        )
+
     return {
         "format": "coco_json",
-        "summary": summarize_coco_annotations(payload),
+        "summary": {
+            "format": "coco_json",
+            "image_count": len(samples),
+            "annotation_count": sum(len(sample["boxes"]) for sample in samples),
+            "category_names": [class_name] if samples else [],
+            "source_labels": sorted(label for label in source_labels if label),
+            "parse_warning": None,
+        },
         "payload": payload,
-        "samples": [],
+        "samples": samples,
     }
 
 
-def build_split_plan(annotation_data: dict[str, Any], args: argparse.Namespace) -> dict[str, int]:
-    if annotation_data["format"] == "pascal_voc_xml_dir":
-        sample_ids = [sample["sample_id"] for sample in annotation_data["samples"]]
-        random.Random(args.seed).shuffle(sample_ids)
-        total = len(sample_ids)
-        train_count = int(total * args.train_ratio)
-        val_count = int(total * args.val_ratio)
-        test_count = total - train_count - val_count
-        return {"train": train_count, "val": val_count, "test": test_count}
+def load_annotation_source(
+    annotations_path: Path,
+    images_dir: Path,
+    class_name: str,
+    metadata_path: Path | None,
+) -> dict[str, Any]:
+    metadata_index = build_metadata_index(load_metadata_records(metadata_path))
+    if annotations_path.is_dir():
+        return parse_pascal_voc_directory(images_dir, annotations_path, class_name, metadata_index)
 
-    payload = annotation_data["payload"]
-    images = payload.get("images")
-    if not isinstance(images, list):
-        return {"train": 0, "val": 0, "test": 0}
+    payload = load_json(annotations_path)
+    return parse_coco_annotations(images_dir, payload, class_name, metadata_index)
 
-    image_ids: list[Any] = []
-    for image in images:
-        if isinstance(image, dict):
-            image_ids.append(image.get("id", image.get("file_name")))
 
-    random.Random(args.seed).shuffle(image_ids)
-    total = len(image_ids)
-    train_count = int(total * args.train_ratio)
-    val_count = int(total * args.val_ratio)
-    test_count = total - train_count - val_count
-    return {"train": train_count, "val": val_count, "test": test_count}
+def resolve_group_key(sample: dict[str, Any], group_field: str) -> str:
+    if group_field == "none":
+        return sample["sample_id"]
+    if group_field == "sample_id":
+        return sample["sample_id"]
+    metadata = sample.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get(group_field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return sample["sample_id"]
 
 
 def assign_splits(samples: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, list[dict[str, Any]]]:
-    shuffled = list(samples)
-    random.Random(args.seed).shuffle(shuffled)
-    total = len(shuffled)
-    train_count = int(total * args.train_ratio)
-    val_count = int(total * args.val_ratio)
-    train_samples = shuffled[:train_count]
-    val_samples = shuffled[train_count : train_count + val_count]
-    test_samples = shuffled[train_count + val_count :]
-    return {"train": train_samples, "val": val_samples, "test": test_samples}
+    grouped_samples: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for sample in samples:
+        grouped_samples[resolve_group_key(sample, args.group_field)].append(sample)
+
+    group_items = list(grouped_samples.items())
+    random.Random(args.seed).shuffle(group_items)
+    total_samples = len(samples)
+    target_counts = {
+        "train": int(total_samples * args.train_ratio),
+        "val": int(total_samples * args.val_ratio),
+    }
+    target_counts["test"] = total_samples - target_counts["train"] - target_counts["val"]
+
+    split_samples: dict[str, list[dict[str, Any]]] = {"train": [], "val": [], "test": []}
+    running_counts = {"train": 0, "val": 0, "test": 0}
+
+    for group_key, members in group_items:
+        preferred_split = "test"
+        if running_counts["train"] < target_counts["train"]:
+            preferred_split = "train"
+        elif running_counts["val"] < target_counts["val"]:
+            preferred_split = "val"
+        for sample in members:
+            sample["group_key"] = group_key
+        split_samples[preferred_split].extend(members)
+        running_counts[preferred_split] += len(members)
+
+    return split_samples
 
 
 def build_plan(args: argparse.Namespace, config: dict[str, Any] | None) -> dict[str, Any]:
-    annotation_data = load_annotation_source(args.annotations, args.images_dir, args.class_name)
+    annotation_data = load_annotation_source(
+        args.annotations,
+        args.images_dir,
+        args.class_name,
+        args.metadata,
+    )
     annotation_summary = annotation_data["summary"]
-    split_plan = build_split_plan(annotation_data, args)
+    split_assignment = assign_splits(annotation_data["samples"], args)
+    split_plan = {split: len(rows) for split, rows in split_assignment.items()}
     output_dir = args.output_dir.resolve()
+    groups = sorted({resolve_group_key(sample, args.group_field) for sample in annotation_data["samples"]})
     return {
         "task": "prepare_detection_dataset",
         "status": "dry-run" if args.dry_run else "planned",
@@ -272,8 +454,13 @@ def build_plan(args: argparse.Namespace, config: dict[str, Any] | None) -> dict[
         "source": {
             "images_dir": str(args.images_dir.resolve()),
             "annotations": str(args.annotations.resolve()),
+            "metadata": str(args.metadata.resolve()) if args.metadata else None,
             "class_name": args.class_name,
             "annotation_format": annotation_data["format"],
+        },
+        "split_strategy": {
+            "group_field": args.group_field,
+            "group_count": len(groups),
         },
         "splits": split_plan,
         "copy_mode": args.copy_mode,
@@ -290,9 +477,9 @@ def build_plan(args: argparse.Namespace, config: dict[str, Any] | None) -> dict[
         "annotation_summary": annotation_summary,
         "resolved_samples": annotation_data.get("samples", []),
         "todo": [
-            "Normalize the source box annotations into the target detector format.",
-            "Decide whether the prepared dataset should be copy-, symlink-, or manifest-based.",
-            "Write class index and split manifest files after the detector backend is fixed.",
+            "Review group-aware split outputs to confirm no scene leakage across train/val/test.",
+            "Keep generated dataset manifests local-only and do not commit them.",
+            "Run the detector baseline against dataset.yaml after QA passes.",
         ],
     }
 
@@ -328,7 +515,7 @@ def materialize_image(source: Path, destination: Path, copy_mode: str) -> None:
         destination.symlink_to(source)
 
 
-def write_dataset_yaml(output_dir: Path) -> None:
+def write_dataset_yaml(output_dir: Path, class_name: str) -> None:
     dataset_yaml = "\n".join(
         [
             f"path: {output_dir}",
@@ -336,7 +523,7 @@ def write_dataset_yaml(output_dir: Path) -> None:
             "val: images/val",
             "test: images/test",
             "names:",
-            "  0: missing_fastener",
+            f"  0: {class_name}",
             "",
         ]
     )
@@ -347,41 +534,42 @@ def materialize_dataset(plan: dict[str, Any], args: argparse.Namespace) -> None:
     output_dir = args.output_dir
     materialize_dirs(output_dir)
 
-    if plan["source"]["annotation_format"] == "pascal_voc_xml_dir":
-        split_samples = assign_splits(plan["resolved_samples"], args)
-        split_manifest: dict[str, list[dict[str, Any]]] = {}
+    split_samples = assign_splits(plan["resolved_samples"], args)
+    split_manifest: dict[str, list[dict[str, Any]]] = {}
 
-        for split, samples in split_samples.items():
-            split_manifest[split] = []
-            for sample in samples:
-                source_image = Path(sample["image_path"])
-                image_target = output_dir / "images" / split / source_image.name
-                label_target = output_dir / "labels" / split / f"{Path(sample['file_name']).stem}.txt"
+    for split, samples in split_samples.items():
+        split_manifest[split] = []
+        for sample in samples:
+            source_image = Path(sample["image_path"])
+            image_target = output_dir / "images" / split / source_image.name
+            label_target = output_dir / "labels" / split / f"{Path(sample['file_name']).stem}.txt"
 
-                label_lines = [
-                    normalize_bbox(box["bbox"], sample["width"], sample["height"])
-                    for box in sample["boxes"]
-                ]
-                label_target.write_text("\n".join(label_lines) + ("\n" if label_lines else ""), encoding="utf-8")
+            label_lines = [
+                normalize_bbox(box["bbox"], sample["width"], sample["height"])
+                for box in sample["boxes"]
+            ]
+            label_target.write_text("\n".join(label_lines) + ("\n" if label_lines else ""), encoding="utf-8")
 
-                if args.copy_mode in {"copy", "symlink"}:
-                    materialize_image(source_image, image_target, args.copy_mode)
+            if args.copy_mode in {"copy", "symlink"}:
+                materialize_image(source_image, image_target, args.copy_mode)
 
-                split_manifest[split].append(
-                    {
-                        "sample_id": sample["sample_id"],
-                        "image_path": str(source_image),
-                        "label_path": str(label_target.resolve()),
-                        "box_count": len(sample["boxes"]),
-                    }
-                )
-
-        for split, rows in split_manifest.items():
-            (output_dir / "manifests" / f"{split}.json").write_text(
-                json.dumps(rows, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
+            split_manifest[split].append(
+                {
+                    "sample_id": sample["sample_id"],
+                    "group_key": sample.get("group_key"),
+                    "image_path": str(source_image),
+                    "label_path": str(label_target.resolve()),
+                    "box_count": len(sample["boxes"]),
+                    "metadata": sample.get("metadata", {}),
+                }
             )
-        write_dataset_yaml(output_dir)
+
+    for split, rows in split_manifest.items():
+        (output_dir / "manifests" / f"{split}.json").write_text(
+            json.dumps(rows, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    write_dataset_yaml(output_dir, args.class_name)
 
     manifest_path = output_dir / "dataset_manifest.json"
     manifest_path.write_text(

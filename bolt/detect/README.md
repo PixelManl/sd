@@ -1,13 +1,12 @@
 # Detect Stage
 
 Detection is the final delivery mainline for the bolt-missing task.
-This directory holds the baseline contract for a box-supervised detector,
-not a fully wired training stack yet.
+This directory now holds a runnable baseline contract for a box-supervised
+detector, with local dataset materialization and Ultralytics-oriented entrypoints.
 
 The current repository state is intentionally conservative:
 
 - Official supervision is rectangle boxes.
-- The repo does not ship a detection framework dependency yet.
 - This pass defines the baseline path, file contracts, and CLIs.
 - Runtime outputs such as `bolt/detect/runs/` remain local-only artifacts.
 
@@ -35,9 +34,12 @@ For now, the scripts in `bolt/detect/scripts/` focus on:
 
 ## Suggested Data Contract
 
-Because the repo still lacks a committed detection framework, the cleanest
-intermediate contract is a COCO-style JSON with rectangle boxes plus an image
-root on local disk.
+The detector entry now accepts either:
+
+- a Pascal VOC XML directory
+- a COCO JSON annotation file
+
+and materializes a YOLO-style dataset view for the first baseline.
 
 Recommended local-only inputs:
 
@@ -49,18 +51,18 @@ Expected class set for the first pass:
 
 - `missing_fastener`
 
-The current skeleton scripts are conservative:
+The current scripts are intentionally narrow:
 
-- `prepare_detection_dataset.py` validates paths and emits a split/materialize
-  plan.
+- `prepare_detection_dataset.py` validates paths, supports COCO/VOC, attaches
+  optional metadata, applies group-aware split isolation, and materializes a
+  YOLO-style dataset view.
 - `report_bbox_stats.py` reads COCO-like box JSON and reports box-scale stats.
 - `train_baseline.py` resolves config/paths and prints a training plan.
 - `eval_baseline.py` resolves config/paths and prints an evaluation plan.
 - `infer_baseline.py` resolves config/paths and prints an inference plan.
 
-If `ultralytics` is available locally, later revisions can wire the train/eval/
-infer commands to a YOLO baseline. This skeleton intentionally does not hard
-require that dependency.
+If `ultralytics` is available locally, the train/eval/infer scripts can already
+execute a YOLO baseline. Runtime artifacts still stay local-only.
 
 ## Config Template
 
@@ -88,9 +90,16 @@ Prepare dataset skeleton:
 python -m uv run python bolt/detect/scripts/prepare_detection_dataset.py `
   --images-dir data/bolt/detect/images `
   --annotations data/bolt/detect/annotations/instances.json `
+  --metadata data/bolt/detect/annotations/sample_metadata.json `
   --output-dir data/bolt/detect/prepared/baseline `
   --dry-run
 ```
+
+Recommended metadata fields for leak-safe splitting:
+
+- `sample_id`
+- `scene_id`
+- `capture_group_id`
 
 Report box stats:
 
@@ -129,19 +138,18 @@ python -m uv run python bolt/detect/scripts/infer_baseline.py `
 
 ## What Is Deliberately Missing
 
-This baseline skeleton does not yet commit to:
+This baseline still does not commit to:
 
-- an actual training backend
-- dataset conversion into a specific detector format
-- checkpoint management
-- metric persistence format
-- visualization assets
+- scene-aware split policy beyond the metadata you provide
+- checkpoint selection policy
+- training hyperparameter sweep logic
+- result visualization standards
 
 Those pieces should be added only after:
 
 1. the box dataset contract is stable
-2. box scale and quality look reasonable
-3. the team decides on the first framework dependency
+2. group leakage is checked
+3. the first YOLO baseline has been run once end-to-end
 
 ## Local Output Conventions
 
