@@ -136,6 +136,23 @@ python -m uv run python bolt/detect/scripts/infer_baseline.py `
   --dry-run
 ```
 
+Run the whole detection line in one command:
+
+```powershell
+python -m uv run python bolt/detect/scripts/run_detection_pipeline.py `
+  --images-dir C:\path\to\JPEGImages `
+  --annotations C:\path\to\Annotations `
+  --prepared-root data/bolt/detect/prepared/current_round `
+  --run-root bolt/detect/runs/current_round `
+  --include-label faultScrew `
+  --group-field sample_id `
+  --copy-mode copy `
+  --epochs 20 `
+  --batch-size 4 `
+  --imgsz 960 `
+  --device 0
+```
+
 ## What Is Deliberately Missing
 
 This baseline still does not commit to:

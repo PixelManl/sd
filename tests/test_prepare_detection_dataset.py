@@ -36,6 +36,7 @@ class PrepareDetectionDatasetTests(unittest.TestCase):
             class_name="missing_fastener",
             metadata=None,
             group_field="capture_group_id",
+            include_label=[],
             train_ratio=0.5,
             val_ratio=0.5,
             test_ratio=0.0,
@@ -168,6 +169,40 @@ class PrepareDetectionDatasetTests(unittest.TestCase):
 
             first_label = exported_labels[0].read_text(encoding="utf-8").strip()
             self.assertTrue(first_label.startswith("0 "))
+
+    def test_include_label_filters_out_non_target_voc_boxes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            images_dir, annotations_dir = self.create_voc_fixture(tmp_path)
+            target_xml = annotations_dir / "sample_b.xml"
+            target_xml.write_text(
+                """<annotation>
+    <filename>sample_b.jpg</filename>
+    <size><width>4000</width><height>3000</height><depth>3</depth></size>
+    <object>
+        <name>faultScrew</name>
+        <bndbox><xmin>10</xmin><ymin>20</ymin><xmax>30</xmax><ymax>40</ymax></bndbox>
+    </object>
+    <object>
+        <name>normScrew</name>
+        <bndbox><xmin>50</xmin><ymin>60</ymin><xmax>70</xmax><ymax>80</ymax></bndbox>
+    </object>
+</annotation>
+""",
+                encoding="utf-8",
+            )
+            args = self.build_args(
+                images_dir,
+                annotations_dir,
+                tmp_path / "prepared",
+                include_label=["faultScrew"],
+            )
+
+            plan = self.module.build_plan(args, config=None)
+            sample_b = [sample for sample in plan["resolved_samples"] if sample["sample_id"] == "sample_b"][0]
+
+            self.assertEqual(len(sample_b["boxes"]), 1)
+            self.assertEqual(sample_b["boxes"][0]["original_label"], "faultScrew")
 
     def test_group_split_keeps_same_capture_group_together(self):
         with tempfile.TemporaryDirectory() as tmp:

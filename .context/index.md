@@ -7,6 +7,7 @@
 - 当前资源：100 张缺陷图，已具备框标注；暂无健康图
 - 当前优先级：以检测为最终交付主线，同步推进健康图种子集与 SAM2 资产 pilot
 - 当前事实边界：仓库里还没有现成的 SAM2 实现，SAM2 是主线目标而不是既成模块
+- 当前工程状态：`bolt/detect/scripts/run_detection_pipeline.py` 已可串联 `prepare -> train -> eval -> infer`
 
 ## Private Data Rules
 
@@ -37,3 +38,9 @@
 3. 同步收集小规模高匹配健康图种子集，用作负样本与后续生成母图。
 4. 用 SAM2 做小批量资产 pilot，沉淀 `core_mask`、`edit_mask`、overlay 和 QA 记录。
 5. 用检测结果反向指导健康图补集与 SAM2 资产优先级。
+
+## Current Detector Baseline
+
+- 已完成一轮真实本地训练闭环，源数据为 `2511bwb_5` 中的 `faultScrew` 单类筛选视图。
+- 当前按训练同尺度 `imgsz=640` 对齐后的基线结果可作为下一轮补数和误检分析起点：`precision 0.7405 / recall 0.5764 / mAP50 0.6225 / mAP50-95 0.2534`。
+- 训练产物、权重、推理图与评测 JSON 只允许保留在本地私有目录。

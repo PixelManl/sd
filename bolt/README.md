@@ -19,3 +19,6 @@
 - `mask/` 负责 SAM2 像素级资产 pilot
 
 详细关系参见 `bolt/docs/mainline_architecture.md`。
+
+当前三人并行协作入口参见 [round1_parallel_workflow.md](/E:/Repository/Project/sd/bolt/docs/round1_parallel_workflow.md)。
+本地私有目录可以通过 [bootstrap_local_workspace.py](/E:/Repository/Project/sd/bolt/scripts/bootstrap_local_workspace.py) 一键初始化。

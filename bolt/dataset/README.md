@@ -72,3 +72,16 @@ bolt/dataset/
 - 一份简要统计说明，至少包含样本数、类别数、空图比例和基本框分布。
 
 如果这些资产还没有准备好，不要先扩展检测结构；先把数据契约和复核闭环站稳。
+
+## 当前并行协作入口
+
+为了让 `SDXL` 修复、原图增强和 `YOLO11n` 训练三条线并行推进，当前本地目录统一按
+[round1_parallel_workflow.md](/E:/Repository/Project/sd/bolt/docs/round1_parallel_workflow.md) 执行。
+
+可以直接运行：
+
+```powershell
+python -m uv run python bolt/scripts/bootstrap_local_workspace.py --round-tag 2026-03-27
+```
+
+这条命令只会创建本地私有目录，不会生成任何需要提交的真实数据。

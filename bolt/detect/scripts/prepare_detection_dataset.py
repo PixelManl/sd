@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
         default="capture_group_id",
         help="Preferred grouping key for split isolation. Falls back to sample_id when missing.",
     )
+    parser.add_argument(
+        "--include-label",
+        action="append",
+        default=[],
+        help="Optional source label to keep as positive. Repeat for multiple labels.",
+    )
     parser.add_argument("--train-ratio", type=float, default=0.8)
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--test-ratio", type=float, default=0.1)
@@ -98,6 +104,10 @@ def maybe_load_yaml(path: Path | None) -> dict[str, Any] | None:
     with path.open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     return data if isinstance(data, dict) else {}
+
+
+def normalize_label_filter(values: list[str]) -> set[str]:
+    return {value.strip() for value in values if isinstance(value, str) and value.strip()}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -205,6 +215,7 @@ def parse_pascal_voc_directory(
     annotations_dir: Path,
     class_name: str,
     metadata_index: dict[str, dict[str, Any]],
+    include_labels: set[str],
 ) -> dict[str, Any]:
     image_index = index_images(images_dir)
     samples: list[dict[str, Any]] = []
@@ -232,6 +243,8 @@ def parse_pascal_voc_directory(
         for obj in root.findall("object"):
             original_label = (obj.findtext("name") or "").strip()
             original_labels.add(original_label)
+            if include_labels and original_label not in include_labels:
+                continue
             bbox = obj.find("bndbox")
             if bbox is None:
                 continue
@@ -298,6 +311,7 @@ def parse_coco_annotations(
     payload: dict[str, Any],
     class_name: str,
     metadata_index: dict[str, dict[str, Any]],
+    include_labels: set[str],
 ) -> dict[str, Any]:
     images = payload.get("images")
     annotations = payload.get("annotations")
@@ -324,6 +338,8 @@ def parse_coco_annotations(
         category_name = category_name_by_id.get(annotation.get("category_id"), "")
         if category_name:
             source_labels.add(category_name)
+        if include_labels and category_name not in include_labels:
+            continue
         annotations_by_image_id[image_id].append(
             {
                 "class_id": 0,
@@ -380,13 +396,20 @@ def load_annotation_source(
     images_dir: Path,
     class_name: str,
     metadata_path: Path | None,
+    include_labels: set[str],
 ) -> dict[str, Any]:
     metadata_index = build_metadata_index(load_metadata_records(metadata_path))
     if annotations_path.is_dir():
-        return parse_pascal_voc_directory(images_dir, annotations_path, class_name, metadata_index)
+        return parse_pascal_voc_directory(
+            images_dir,
+            annotations_path,
+            class_name,
+            metadata_index,
+            include_labels,
+        )
 
     payload = load_json(annotations_path)
-    return parse_coco_annotations(images_dir, payload, class_name, metadata_index)
+    return parse_coco_annotations(images_dir, payload, class_name, metadata_index, include_labels)
 
 
 def resolve_group_key(sample: dict[str, Any], group_field: str) -> str:
@@ -439,6 +462,7 @@ def build_plan(args: argparse.Namespace, config: dict[str, Any] | None) -> dict[
         args.images_dir,
         args.class_name,
         args.metadata,
+        normalize_label_filter(args.include_label),
     )
     annotation_summary = annotation_data["summary"]
     split_assignment = assign_splits(annotation_data["samples"], args)
@@ -457,6 +481,7 @@ def build_plan(args: argparse.Namespace, config: dict[str, Any] | None) -> dict[
             "metadata": str(args.metadata.resolve()) if args.metadata else None,
             "class_name": args.class_name,
             "annotation_format": annotation_data["format"],
+            "include_labels": sorted(normalize_label_filter(args.include_label)),
         },
         "split_strategy": {
             "group_field": args.group_field,
