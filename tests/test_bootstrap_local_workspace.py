@@ -22,6 +22,8 @@ class BootstrapLocalWorkspaceTests(unittest.TestCase):
         layout = self.module.build_layout(Path("data/bolt"), "2026-03-27")
         self.assertIn("detect/merged_20260327/images", layout["detect_flow"])
         self.assertIn("generate/sdxl/accepted/images", layout["sdxl_flow"])
+        self.assertIn("generate/lora/nut_semantic/source/images", layout["lora_flow"])
+        self.assertIn("generate/lora/nut_semantic/manifests", layout["lora_flow"])
 
     def test_materialize_layout_creates_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -31,6 +33,7 @@ class BootstrapLocalWorkspaceTests(unittest.TestCase):
 
             self.assertTrue((root / "generate" / "sdxl" / "accepted" / "images").exists())
             self.assertTrue((root / "detect" / "merged_20260327" / "annotations").exists())
+            self.assertTrue((root / "generate" / "lora" / "nut_semantic" / "source" / "images").exists())
             self.assertEqual(len(created), sum(len(paths) for paths in layout.values()))
 
 

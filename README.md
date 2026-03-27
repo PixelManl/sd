@@ -31,6 +31,53 @@
 
 裂缝 demo 仅作为最小启动与环境烟测。
 
+## 当前数据位置
+
+如果你现在要把数据发给团队，直接按下面这套路径发。三个人后续都按这个目录工作：
+
+```text
+data/bolt/
+├─ source/seed_round/
+│  ├─ images/                 # 原始 100 张缺陷图
+│  ├─ annotations/            # 原始标注
+│  └─ metadata/               # 样本说明、来源、批次
+├─ generate/sdxl/
+│  ├─ incoming/
+│  │  ├─ images/              # 发给 SDXL 修复线的输入图
+│  │  └─ annotations/         # 对应输入标注
+│  ├─ repaired/
+│  │  ├─ images/              # 修复后的中间结果
+│  │  └─ annotations/
+│  ├─ review/                 # 待人工复核的增强图
+│  └─ accepted/
+│     ├─ images/              # 通过复核、可并入训练的新图
+│     └─ annotations/
+├─ detect/
+│  ├─ current/
+│  │  ├─ images/              # YOLO11n 同学当前训练入口
+│  │  └─ annotations/         # YOLO11n 同学当前标注入口
+│  ├─ merged_20260327/
+│  │  ├─ images/              # 2026-03-27 合流后的第二轮训练图
+│  │  └─ annotations/
+│  └─ metadata/               # split、来源、场景等辅助信息
+└─ ascend/background/
+   ├─ incoming/               # 发给昇腾侧的待处理图
+   └─ accepted/               # 背景处理后通过复核的图
+```
+
+最简单的发放方式：
+
+- 先把原始 `100` 张图和标注统一放到 `data/bolt/source/seed_round/`
+- 给 `SDXL` 修复线的工作输入放到 `data/bolt/generate/sdxl/incoming/`
+- 给 `YOLO11n` 训练同学当前可训练版本放到 `data/bolt/detect/current/`
+- `2026-03-27` 后，把通过复核的新图统一合到 `data/bolt/detect/merged_20260327/`
+
+配套说明：
+
+- 并行协作文档：`bolt/docs/round1_parallel_workflow.md`
+- 数据阶段说明：`bolt/dataset/README.md`
+- 一键建目录：`python -m uv run python bolt/scripts/bootstrap_local_workspace.py --round-tag 2026-03-27`
+
 ## 仓库结构
 
 ```text
@@ -136,6 +183,8 @@ python -m uv run python demo/generate_defect.py --dry-run
 - `output_dir`
 - `image_path`
 - `mask_path`
+- `reference_image_path`
+- `pipeline_kind`
 - `base_model`
 - `controlnet_model`
 
@@ -147,18 +196,57 @@ python -m uv run python demo/generate_defect.py
 
 默认会使用：
 
+- `sd15-controlnet`
 - `runwayml/stable-diffusion-inpainting`
 - `lllyasviel/control_v11p_sd15_canny`
 
 首次运行通常会很慢，因为会涉及模型下载和缓存构建。
+
+如果要切到 SDXL inpainting，可以显式选择另一条后端：
+
+```powershell
+python -m uv run python demo/generate_defect.py `
+  --pipeline-kind sdxl-inpaint `
+  --dry-run
+```
+
+这条路径默认会使用：
+
+- `sdxl-inpaint`
+- `diffusers/stable-diffusion-xl-1.0-inpainting-0.1`
+
+如果要在 SDXL inpainting 上叠加参考图引导，可以额外挂 `IP-Adapter`：
+
+```powershell
+python -m uv run python demo/generate_defect.py `
+  --pipeline-kind sdxl-inpaint `
+  --ip-adapter-repo h94/IP-Adapter `
+  --ip-adapter-weight-name ip-adapter_sdxl.bin `
+  --reference-image-name healthy_bolt_roi.png `
+  --dry-run
+```
+
+当前 demo 里的 `IP-Adapter` 只接在 `sdxl-inpaint` 路径上，`reference-image-name` 会从输入目录读取参考图。
 
 ## 环境变量覆盖
 
 如果你不想使用默认模型源，可以通过环境变量覆盖：
 
 ```powershell
+$env:SD_PIPELINE_KIND="sd15-controlnet"
 $env:SD_BASE_MODEL="your/inpaint/model"
 $env:SD_CONTROLNET_MODEL="your/controlnet/model"
+python -m uv run python demo/generate_defect.py --dry-run
+```
+
+如果要走 SDXL：
+
+```powershell
+$env:SD_PIPELINE_KIND="sdxl-inpaint"
+$env:SD_BASE_MODEL="diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+$env:SD_IP_ADAPTER_REPO="h94/IP-Adapter"
+$env:SD_IP_ADAPTER_WEIGHT_NAME="ip-adapter_sdxl.bin"
+$env:SD_IP_ADAPTER_SCALE="0.6"
 python -m uv run python demo/generate_defect.py --dry-run
 ```
 
@@ -166,6 +254,7 @@ python -m uv run python demo/generate_defect.py --dry-run
 
 ```powershell
 python -m uv run python demo/generate_defect.py `
+  --pipeline-kind sd15-controlnet `
   --base-model your/inpaint/model `
   --controlnet-model your/controlnet/model `
   --dry-run

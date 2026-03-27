@@ -67,6 +67,26 @@ data/bolt/
       └─ accepted/
 ```
 
+## Data Handoff Checklist
+
+你现在给大家发数据，直接按下面这张表发：
+
+- 共同底座：
+  - `data/bolt/source/seed_round/images`
+  - `data/bolt/source/seed_round/annotations`
+- 发给 `SDXL` 修复线：
+  - `data/bolt/generate/sdxl/incoming/images`
+  - `data/bolt/generate/sdxl/incoming/annotations`
+- 发给 `YOLO11n` 训练线：
+  - `data/bolt/detect/current/images`
+  - `data/bolt/detect/current/annotations`
+- 暂存通过人工复核的新图：
+  - `data/bolt/generate/sdxl/accepted/images`
+  - `data/bolt/generate/sdxl/accepted/annotations`
+- `2026-03-27` 统一合流到：
+  - `data/bolt/detect/merged_20260327/images`
+  - `data/bolt/detect/merged_20260327/annotations`
+
 ## Role Contract
 
 ### 1. SDXL 修复主线

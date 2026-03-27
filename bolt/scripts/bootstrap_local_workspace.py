@@ -56,6 +56,13 @@ def build_layout(root: Path, round_tag: str) -> dict[str, list[str]]:
             "ascend/background/incoming",
             "ascend/background/accepted",
         ],
+        "lora_flow": [
+            "generate/lora/nut_semantic/source/images",
+            "generate/lora/nut_semantic/source/captions",
+            "generate/lora/nut_semantic/manifests",
+            "generate/lora/nut_semantic/checkpoints",
+            "generate/lora/nut_semantic/eval",
+        ],
     }
 
 

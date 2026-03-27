@@ -29,6 +29,9 @@ sd/
 │  ├─ batch_augment.py      # demo/legacy 脚本
 │  └─ work_stream.py        # demo/legacy 脚本
 ├─ docs/
+│  ├─ README.md
+│  ├─ project_test_registry.md
+│  ├─ env_regression_registry.md
 │  ├─ repo_tree.md
 │  ├─ superpowers/
 │  ├─ 规范/                 # 私有源文档，不入库
@@ -44,5 +47,5 @@ sd/
 - 目标缺陷：挂点金具螺栓缺失
 - 当前资源：100 张缺陷图
 - 当前短板：缺少健康图
-- 当前建议：先做 SAM2 像素级 mask 资产化
+- 当前建议：以检测为最终交付主线，`SDXL` / 原图增强 / `SAM2` 并行支撑
 - 当前结构：`bolt/` 是主线，`demo/` 只保留最小演示与 smoke 路径

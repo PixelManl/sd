@@ -30,3 +30,11 @@ bolt/generate/outputs/
 bolt/generate/cache/
 bolt/detect/runs/
 bolt/package/build/
+
+# Local scratch, probes, vendored repos, and local weights.
+.tmp_*/
+.tmp_*
+.context/scratch/*
+!.context/scratch/README.md
+external/
+yolo*.pt

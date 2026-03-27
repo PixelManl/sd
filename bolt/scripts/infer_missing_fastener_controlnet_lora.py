@@ -169,6 +169,27 @@ def build_canny_control(roi_bgr: np.ndarray, low_thresh: int = 80, high_thresh: 
     return edges_3
 
 
+def build_canny_control_with_mask(
+    roi_bgr: np.ndarray,
+    mask: np.ndarray,
+    low_thresh: int = 80,
+    high_thresh: int = 160,
+) -> np.ndarray:
+    """
+    构建Canny边缘，但mask区域内的边缘清零。
+    避免ControlNet约束与mask修改区域冲突。
+    """
+    gray = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(gray, low_thresh, high_thresh)
+
+    # mask区域内清零：mask > 127 表示要修改的区域
+    edges[mask > 127] = 0
+
+    edges_3 = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    return edges_3
+
+
 def resize_to_multiple_of_8(img_bgr: np.ndarray, mask: np.ndarray, control_bgr: np.ndarray, target: int = 512):
     h, w = img_bgr.shape[:2]
     side = max(h, w)
@@ -286,7 +307,7 @@ def run(args):
         blur_ksize=args.mask_blur,
         shape=args.mask_shape,
     )
-    control_bgr = build_canny_control(roi_bgr, args.canny_low, args.canny_high)
+    control_bgr = build_canny_control_with_mask(roi_bgr, mask, args.canny_low, args.canny_high)
 
     roi_r, mask_r, control_r = resize_to_multiple_of_8(roi_bgr, mask, control_bgr, target=args.infer_size)
 
