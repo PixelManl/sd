@@ -17,6 +17,7 @@
 - 并行协作说明：[../bolt/docs/round1_parallel_workflow.md](../bolt/docs/round1_parallel_workflow.md)
 - SAM2 阶段说明：[../bolt/mask/README.md](../bolt/mask/README.md)
 - SDXL 生成主线说明：[../bolt/generate/README.md](../bolt/generate/README.md)
+- SAM2 到 SDXL 衔接说明：[../bolt/docs/sam2_sdxl_bridge.md](../bolt/docs/sam2_sdxl_bridge.md)
 
 ## Data Handoff
 
