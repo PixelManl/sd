@@ -11,6 +11,23 @@
 
 这一层当前只做 `SAM2 asset-contract + pilot skeleton`，目标是先把资产格式、元数据、质检状态和最小 CLI 骨架定下来，再决定后续是否接入真实 SAM2 推理或交互流程。
 
+## Current Runtime Default
+
+如果当前本地或服务器环境接入了真实 SAM2 推理，仓库里的默认目标是：
+
+- `SAM2.1 hiera tiny`
+- config：`configs/sam2.1/sam2.1_hiera_t.yaml`
+- checkpoint：`/root/sam2-local/checkpoints/sam2.1_hiera_tiny.pt`
+
+对应实现入口见：
+
+- `scripts/good_bolt_sam2_box_prompt_backend.py`
+
+这表示当前默认不是 `small`、`base` 或 `large`。如果部署环境需要切换，可以通过环境变量覆盖：
+
+- `GOOD_BOLT_SAM2_CONFIG`
+- `GOOD_BOLT_SAM2_CHECKPOINT`
+
 当前约定的两类核心输出：
 
 - `core_mask`：紧贴可见缺失证据的保守二值 mask，优先保证语义准确，不主动向背景扩张。

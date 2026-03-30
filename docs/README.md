@@ -15,6 +15,8 @@
 - 检测闭环入口：[../bolt/detect/scripts/run_detection_pipeline.py](../bolt/detect/scripts/run_detection_pipeline.py)
 - 主线文档入口：[../bolt/docs/README.md](../bolt/docs/README.md)
 - 并行协作说明：[../bolt/docs/round1_parallel_workflow.md](../bolt/docs/round1_parallel_workflow.md)
+- SAM2 阶段说明：[../bolt/mask/README.md](../bolt/mask/README.md)
+- SDXL 生成主线说明：[../bolt/generate/README.md](../bolt/generate/README.md)
 
 ## Data Handoff
 

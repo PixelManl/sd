@@ -17,6 +17,21 @@
 - 官方标注替代方案
 - 大规模批处理生产规范
 
+## Current Runtime Note
+
+虽然本合同本身不强绑定权重，但当前仓库里已经存在一个可接真实推理的默认后端约定：
+
+- model family：`SAM2.1`
+- default variant：`hiera tiny`
+- default config：`configs/sam2.1/sam2.1_hiera_t.yaml`
+- default checkpoint：`/root/sam2-local/checkpoints/sam2.1_hiera_tiny.pt`
+
+对应代码入口：
+
+- `bolt/mask/scripts/good_bolt_sam2_box_prompt_backend.py`
+
+因此当前共享口径应当写成“默认是 `SAM2.1 tiny`，可被环境变量覆盖”，而不是泛称 “SAM2.1”。
+
 ## Contract Scope
 
 SAM2 在本仓库里被视作内部资产线，而不是官方 annotation replacement。
